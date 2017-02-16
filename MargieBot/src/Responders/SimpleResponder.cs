@@ -7,6 +7,8 @@ namespace MargieBot
     {
         public Func<ResponseContext, bool> CanRespondFunction { get; set; }
         public List<Func<ResponseContext, BotMessage>> GetResponseFunctions { get; set; }
+        public Func<ResponseContext, bool> CanReactFunction { get; set; }
+        public List<Func<ResponseContext, BotReaction>> GetReactionFunctions { get; set; }
 
         public SimpleResponder()
         {
@@ -27,8 +29,24 @@ namespace MargieBot
             return GetResponseFunctions[new Random().Next(GetResponseFunctions.Count - 1)](context);
         }
 
+
+
+        public bool CanReact(ResponseContext context)
+        {
+            return CanReactFunction(context);
+        }
+
+        public BotReaction GetReaction(ResponseContext context)
+        {
+            if (GetResponseFunctions.Count == 0)
+            {
+                throw new InvalidOperationException("Attempted to get a reaction for \"" + context.Message.Text + "\", but no valid reactions have been registered.");
+            }
+
+            return GetReactionFunctions[new Random().Next(GetReactionFunctions.Count - 1)](context);
+        }
         #region Utility
-        public static SimpleResponder Create(Func<ResponseContext, bool> canRespond, Func<ResponseContext, string> getResponse)
+        public static SimpleResponder Create(Func<ResponseContext, bool> canRespond, Func<ResponseContext, string> getResponse, Func<ResponseContext, bool> canReact, Func<ResponseContext, string> getReaction)
         {
             return new SimpleResponder()
             {
@@ -38,6 +56,15 @@ namespace MargieBot
                     (ResponseContext context) =>
                     {
                         return new BotMessage() { Text = getResponse(context) };
+                    }
+                },
+
+                CanReactFunction = canReact,
+                GetReactionFunctions = new List<Func<ResponseContext, BotReaction>>()
+                {
+                    (ResponseContext context) =>
+                    {
+                        return new BotReaction() { Name = getReaction(context) };
                     }
                 }
             };

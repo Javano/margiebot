@@ -8,6 +8,7 @@ namespace MargieBot
     {
         #region General "fixed" properties
         public bool BotHasResponded { get; set; }
+        public bool BotHasReacted { get; set; }
         public string BotUserID { get; set; }
         public string BotUserName { get; set; }
         public SlackMessage Message { get; set; }

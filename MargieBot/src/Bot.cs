@@ -38,8 +38,8 @@ namespace MargieBot
         private string SlackRtmStartHelp = "https://api.slack.com/methods/rtm.start";
         #endregion
 
-    #region Public properties
-    private IEnumerable<string> _Aliases = new List<string>();
+        #region Public properties
+        private IEnumerable<string> _Aliases = new List<string>();
         public IEnumerable<string> Aliases
         {
             get { return _Aliases; }
@@ -121,12 +121,12 @@ namespace MargieBot
 
             // Handle exceptions.
 
-            if (! jData["ok"].Value<bool>())
+            if (!jData["ok"].Value<bool>())
             {
                 var errorMessage = jData["ok"].Value<string>();
                 switch (errorMessage)
-                {       
-                    case "not_authed":          
+                {
+                    case "not_authed":
                     case "account_inactive":
                     case "invalid_auth":
                         InvalidCredentialException exIC = new InvalidCredentialException(errorMessage);
@@ -146,7 +146,7 @@ namespace MargieBot
                         exTE.HelpLink = SlackRtmStartHelp;
                         throw exTE;
                     default:
-                      throw new Exception(errorMessage);
+                        throw new Exception(errorMessage);
                 }
             }
 
@@ -240,7 +240,7 @@ namespace MargieBot
                 UserID = null;
                 UserName = null;
             };
-            
+
             // connect
             await WebSocket.Connect(webSocketUrl);
         }
@@ -261,7 +261,7 @@ namespace MargieBot
             {
                 jObject = JObject.Parse(json);
             }
-            catch(JsonReaderException)
+            catch (JsonReaderException)
             {
                 isValidJson = false;
 #if DEBUG
@@ -271,7 +271,7 @@ namespace MargieBot
 
             if (!isValidJson)
                 return;
-            
+
             if (jObject["type"].Value<string>() == "message")
             {
                 var channelID = jObject["channel"].Value<string>();
@@ -326,11 +326,19 @@ namespace MargieBot
                 {
                     foreach (var responder in Responders ?? Enumerable.Empty<IResponder>())
                     {
-                        if (responder != null && responder.CanRespond(context))
+                        if (responder != null)
                         {
-                            await SendIsTyping(message.ChatHub);
-                            await Say(responder.GetResponse(context), context);
-                            context.BotHasResponded = true;
+                            if (responder.CanRespond(context))
+                            {
+                                await SendIsTyping(message.ChatHub);
+                                await Say(responder.GetResponse(context), context);
+                                context.BotHasResponded = true;
+                            }
+                            if (responder.CanReact(context))
+                            {
+                                await React(responder.GetReaction(context), context);
+                                context.BotHasReacted = true;
+                            }
                         }
                     }
                 }
@@ -365,7 +373,7 @@ namespace MargieBot
                 chatHubID = context.Message.ChatHub.ID;
             }
 
-            if(chatHubID == null)
+            if (chatHubID == null)
             {
                 throw new ArgumentException($"When calling the {nameof(Say)}() method, the {nameof(message)} parameter must have its {nameof(message.ChatHub)} property set.");
             }
@@ -384,8 +392,76 @@ namespace MargieBot
                 values.Add(JsonConvert.SerializeObject(message.Attachments));
             }
 
+            /** CUSTOM ATTRIBUTE INSERTION ****************************************/
+            if (message.Thread_TS != null && message.Thread_TS != String.Empty)
+            {
+                values.Add("thread_ts");
+                values.Add(message.Thread_TS);
+            }
+            foreach (KeyValuePair<string, string> kv in message.Custom_Attibs)
+            {
+                values.Add(kv.Key);
+                values.Add(kv.Value);
+            }
+            /** END CUSTOM ATTRIBS *************************************************/
+
             await client.DownloadString(
                 "https://slack.com/api/chat.postMessage",
+                RequestMethod.Post,
+                values.ToArray()
+            );
+        }
+
+        /// <summary>
+        /// Allows you to programmatically operate the bot. The bot will post the passed reaction in whichever "chat hub" (DM, channel, or group) the message specifies.
+        /// </summary>
+        /// <param name="message">The reaction you want the bot to post in Slack.</param>
+        public async Task React(BotReaction reaction)
+        {
+            await React(reaction, null);
+        }
+
+        private async Task React(BotReaction reaction, ResponseContext context)
+        {
+            string chatHubID = null;
+            if (reaction == null)
+            {
+                return;
+            }
+
+            if (reaction.ChatHub != null)
+            {
+                chatHubID = reaction.ChatHub.ID;
+            }
+            else if (context != null && context.Message.ChatHub != null)
+            {
+                chatHubID = context.Message.ChatHub.ID;
+            }
+
+            if (chatHubID == null)
+            {
+                throw new ArgumentException($"When calling the {nameof(Say)}() method, the {nameof(reaction)} parameter must have its {nameof(reaction.ChatHub)} property set.");
+            }
+
+            var client = new NoobWebClient();
+            var values = new List<string>() {
+                    "token", SlackKey,
+                    "channel", chatHubID,
+                    "name", reaction.Name,
+                    "timestamp", reaction.Timestamp,
+                    "file_comment", reaction.File_Comment,
+                    "file", reaction.File
+                };
+
+            foreach (KeyValuePair<string, string> kv in reaction.Custom_Attibs)
+            {
+                values.Add(kv.Key);
+                values.Add(kv.Value);
+            }
+            /** END CUSTOM ATTRIBS *************************************************/
+
+            await client.DownloadString(
+                "https://slack.com/api/reactions.add",
                 RequestMethod.Post,
                 values.ToArray()
             );
@@ -399,12 +475,13 @@ namespace MargieBot
         /// <returns></returns>
         public async Task SendIsTyping(SlackChatHub chatHub)
         {
-            if(!IsConnected)
+            if (!IsConnected)
             {
                 throw new InvalidOperationException(@"Can't send the ""Bot typing"" indicator when the bot is disconnected.");
             }
 
-            var message = new {
+            var message = new
+            {
                 type = "typing",
                 channel = chatHub.ID,
                 user = UserID
@@ -412,7 +489,7 @@ namespace MargieBot
 
             await WebSocket.Send(JsonConvert.SerializeObject(message));
         }
-        
+
         #region Events
         public event MargieConnectionStatusChangedEventHandler ConnectionStatusChanged;
         private void RaiseConnectionStatusChanged()
